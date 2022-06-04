@@ -1,0 +1,34 @@
+# Trivial <package>Config.cmake file
+cmake_minimum_required(VERSION 3.10)
+
+include_guard(DIRECTORY)
+
+# Set some dummy versions, probably a good idea.
+set(@PACKAGE_NAME@_FOUND TRUE)
+set(@PACKAGE_NAME@_VERSION_MAJOR 0)
+set(@PACKAGE_NAME@_VERSION_MINOR 0)
+set(@PACKAGE_NAME@_VERSION 0.0)
+set(@PACKAGE_NAME@_VERSION_STRING "0.0")
+
+# List of all libraries that were installed, includes static ones.
+set(@PACKAGE_NAME@_ALL_LIBRARIES "@PACKAGE_LIBRARY_LIST@")
+
+# We know where the library directory is relative to this file.
+get_filename_component(@PACKAGE_NAME@_CMAKE_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
+# So we can obtain the library for that:
+find_library(@PACKAGE_NAME@_LIBRARY @PACKAGE_NAME@
+             HINTS "${@PACKAGE_NAME@_CMAKE_DIR}/../../../lib/@PACKAGE_NAME@/"
+             )
+
+
+# Create the dummy cmake library this package provides.
+add_library(@PACKAGE_NAME@ INTERFACE)
+
+if(@PACKAGE_NAME@_LIBRARY)
+  target_link_libraries(@PACKAGE_NAME@ INTERFACE ${@PACKAGE_NAME@_LIBRARY})
+else()
+  message(WARNING "Did not find any library for @PACKAGE_NAME@")
+endif()
+
+
+#target_include_directories(@PACKAGE_NAME@ INTERFACE include/)

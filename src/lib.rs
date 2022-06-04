@@ -171,10 +171,7 @@ pub fn install_package(
 ) -> Result<()> {
     // Install source code
     // This is special-cased (and not simply added to the list of things to install below)
-    let mut dest_dir = install_base.as_ref().to_owned();
-    dest_dir.push("share");
-    dest_dir.push(package_name);
-    dest_dir.push("rust");
+    let dest_dir = install_base.as_ref().to_owned().join("share").join(package_name).join("rust");
     if dest_dir.is_dir() {
         std::fs::remove_dir_all(&dest_dir)?;
     }
@@ -218,6 +215,7 @@ pub fn install_binaries(
     if dest_dir.is_dir() {
         std::fs::remove_dir_all(&dest_dir)?;
     }
+
     // Copy binaries
     for binary in binaries {
         let name = binary
@@ -240,17 +238,35 @@ pub fn install_binaries(
         ("", "dll"),
         ("", "lib"),
     ];
+    let mut libraries : Vec<String> = vec![];
     for (prefix, suffix) in prefix_suffix_combinations {
         let filename = String::from(prefix) + package_name + "." + suffix;
         let src = src_dir.join(&filename);
-        let dest = dest_dir.join(filename);
+        let dest = dest_dir.join(&filename);
         if src.is_file() {
+            // We found a library, add this to the list of libraries.
+            libraries.push(filename.to_owned());
             // Create destination directory
             DirBuilder::new().recursive(true).create(&dest_dir)?;
             std::fs::copy(&src, &dest)
                 .context(format!("Failed to copy library from '{}'", src.display()))?;
         }
     }
+
+    // Now that we know what libraries exist, we can create the cmake config file.
+    let package_cmake_dir = install_base.as_ref().to_owned().join("share").join(package_name).join("cmake");
+    if package_cmake_dir.is_dir() {
+        std::fs::remove_dir_all(&package_cmake_dir)?;
+    }
+    DirBuilder::new().recursive(true).create(&package_cmake_dir)?;
+    let cmake_template = include_str!("cmakeConfig.cmake.in");
+    let supported_replaces = [("@PACKAGE_NAME@", package_name),
+                              ("@PACKAGE_LIBRARY_LIST@", &libraries.join(&";"))];
+    let mut config_file = cmake_template.to_owned();
+    for (pattern, replace) in supported_replaces {
+        config_file = config_file.replace(pattern, replace);
+    }
+    std::fs::write(package_cmake_dir.join(&format!("{package_name}Config.cmake")), config_file)?;
     Ok(())
 }
 
