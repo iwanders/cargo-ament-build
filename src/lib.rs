@@ -171,7 +171,12 @@ pub fn install_package(
 ) -> Result<()> {
     // Install source code
     // This is special-cased (and not simply added to the list of things to install below)
-    let dest_dir = install_base.as_ref().to_owned().join("share").join(package_name).join("rust");
+    let dest_dir = install_base
+        .as_ref()
+        .to_owned()
+        .join("share")
+        .join(package_name)
+        .join("rust");
     if dest_dir.is_dir() {
         std::fs::remove_dir_all(&dest_dir)?;
     }
@@ -212,6 +217,9 @@ pub fn install_binaries(
 ) -> Result<()> {
     let src_dir = build_base.as_ref().join(profile);
     let dest_dir = install_base.as_ref().join("lib").join(package_name);
+    let lib_dir = install_base.as_ref().join("lib");
+    const SYMLINK_TO_LIB_DIR: bool = true;
+
     if dest_dir.is_dir() {
         std::fs::remove_dir_all(&dest_dir)?;
     }
@@ -238,7 +246,7 @@ pub fn install_binaries(
         ("", "dll"),
         ("", "lib"),
     ];
-    let mut libraries : Vec<String> = vec![];
+    let mut libraries: Vec<String> = vec![];
     for (prefix, suffix) in prefix_suffix_combinations {
         let filename = String::from(prefix) + package_name + "." + suffix;
         let src = src_dir.join(&filename);
@@ -250,6 +258,13 @@ pub fn install_binaries(
             DirBuilder::new().recursive(true).create(&dest_dir)?;
             std::fs::copy(&src, &dest)
                 .context(format!("Failed to copy library from '{}'", src.display()))?;
+            if SYMLINK_TO_LIB_DIR {
+                // Remove the old link, don't care if it failed because the file wasn't there.
+                let symlink_location = lib_dir.join(&filename);
+                std::fs::remove_file(&symlink_location).ok();
+                // Make a relative link in the lib directory to the actual package directory.
+                std::os::unix::fs::symlink(&dest.strip_prefix(&lib_dir)?, &symlink_location)?;
+            }
         }
     }
 
@@ -261,10 +276,13 @@ pub fn install_binaries(
     // will be installed into the include path.
     // Need to recursively search; println!("Build root: {:?}", src_dir);
     // https://doc.rust-lang.org/nightly/std/fs/fn.read_dir.html#examples
-    fn find_markers(dir: &std::path::PathBuf, marker_name: &str, found: &mut Vec<std::path::PathBuf>) -> std::io::Result<()> {
+    fn find_markers(
+        dir: &std::path::PathBuf,
+        marker_name: &str,
+        found: &mut Vec<std::path::PathBuf>,
+    ) -> std::io::Result<()> {
         if dir.is_dir() {
-            if dir.join(marker_name).is_file()
-            {
+            if dir.join(marker_name).is_file() {
                 found.push(dir.to_path_buf());
             }
             for entry in std::fs::read_dir(dir)? {
@@ -278,17 +296,20 @@ pub fn install_binaries(
         Ok(())
     }
 
-    const ROS_INCLUDE_MARKER : &str = "CARGO_ROS_INCLUDE_ROOT";
-    let mut include_roots : Vec<PathBuf> = vec![];
+    const ROS_INCLUDE_MARKER: &str = "CARGO_ROS_INCLUDE_ROOT";
+    let mut include_roots: Vec<PathBuf> = vec![];
     find_markers(&src_dir, ROS_INCLUDE_MARKER, &mut include_roots)?;
     let have_includes = !include_roots.is_empty();
     println!("Found ros include roots: {:?}", include_roots);
     // Now that we have found the roots, we can copy all the entries in it to the include dir.
-    if have_includes
-    {
+    if have_includes {
         // Force all includes into the package_name subdirectory... this breaks with cmake, but it
         // is better as it avoids conflicts.
-        let include_dir = install_base.as_ref().to_owned().join("include").join(package_name);
+        let include_dir = install_base
+            .as_ref()
+            .to_owned()
+            .join("include")
+            .join(package_name);
         if include_dir.is_dir() {
             std::fs::remove_dir_all(&include_dir)?;
         }
@@ -298,37 +319,53 @@ pub fn install_binaries(
         for d in include_roots {
             for entry in std::fs::read_dir(&d)? {
                 let entry = entry?;
-                if entry.path() == d.join(ROS_INCLUDE_MARKER)
-                {
-                    continue;  // Skip the marker item.
+                if entry.path() == d.join(ROS_INCLUDE_MARKER) {
+                    continue; // Skip the marker item.
                 }
                 // Recursive copy is not available in std::fs, lets just use cp.
                 Command::new("cp")
-                .arg("-r")
-                .arg(entry.path())
-                .arg(&include_dir)
-                .output()
-                .context(format!("Failed to copy into include dir from '{:?}'", entry.path()))?;
+                    .arg("-r")
+                    .arg(entry.path())
+                    .arg(&include_dir)
+                    .output()
+                    .context(format!(
+                        "Failed to copy into include dir from '{:?}'",
+                        entry.path()
+                    ))?;
             }
-            
         }
     }
 
     // Now that we know what libraries exist, we can create the cmake config file.
-    let package_cmake_dir = install_base.as_ref().to_owned().join("share").join(package_name).join("cmake");
+    let package_cmake_dir = install_base
+        .as_ref()
+        .to_owned()
+        .join("share")
+        .join(package_name)
+        .join("cmake");
     if package_cmake_dir.is_dir() {
         std::fs::remove_dir_all(&package_cmake_dir)?;
     }
-    DirBuilder::new().recursive(true).create(&package_cmake_dir)?;
+    DirBuilder::new()
+        .recursive(true)
+        .create(&package_cmake_dir)?;
     let cmake_template = include_str!("cmakeConfig.cmake.in");
-    let supported_replaces = [("@PACKAGE_NAME@", package_name),
-                              ("@PACKAGE_LIBRARY_LIST@", &libraries.join(&";")),
-                              ("@HAVE_INCLUDE_FILES@", if have_includes {"TRUE"} else {"FALSE"})];
+    let supported_replaces = [
+        ("@PACKAGE_NAME@", package_name),
+        ("@PACKAGE_LIBRARY_LIST@", &libraries.join(&";")),
+        (
+            "@HAVE_INCLUDE_FILES@",
+            if have_includes { "TRUE" } else { "FALSE" },
+        ),
+    ];
     let mut config_file = cmake_template.to_owned();
     for (pattern, replace) in supported_replaces {
         config_file = config_file.replace(pattern, replace);
     }
-    std::fs::write(package_cmake_dir.join(&format!("{package_name}Config.cmake")), config_file)?;
+    std::fs::write(
+        package_cmake_dir.join(&format!("{package_name}Config.cmake")),
+        config_file,
+    )?;
     Ok(())
 }
 
@@ -369,9 +406,7 @@ pub fn install_files_from_metadata(
         for rel_path in install_entries {
             let src = package_path.as_ref().join(&rel_path);
             copy(&src, &dest).with_context(|| {
-                format!(
-                    "Could not process [package.metadata.ros.{key}] entry '{rel_path}'",
-                )
+                format!("Could not process [package.metadata.ros.{key}] entry '{rel_path}'",)
             })?;
         }
     }
