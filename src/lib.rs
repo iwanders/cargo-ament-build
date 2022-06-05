@@ -280,7 +280,7 @@ pub fn install_binaries(
             for entry in std::fs::read_dir(dir)? {
                 let entry = entry?;
                 let path = entry.path();
-                if path.is_dir() && !path.is_symlink() {
+                if path.is_dir() { // && !path.is_symlink() {
                     find_markers(&path, marker_name, found)?;
                 }
             }
@@ -355,7 +355,7 @@ pub fn install_binaries(
         config_file = config_file.replace(pattern, replace);
     }
     std::fs::write(
-        package_cmake_dir.join(&format!("{package_name}Config.cmake")),
+        package_cmake_dir.join(&format!("{}Config.cmake", package_name)),
         config_file,
     )?;
     Ok(())
@@ -380,10 +380,10 @@ pub fn install_files_from_metadata(
     for subdir in ["share", "include", "lib"] {
         let dest = install_base.as_ref().join(subdir).join(package_name);
         DirBuilder::new().recursive(true).create(&dest)?;
-        let key = format!("install_to_{subdir}");
+        let key = format!("install_to_{}", subdir);
         let install_array = match metadata_ros_table.get(&key) {
             Some(Value::Array(arr)) => arr,
-            Some(_) => bail!("The [package.metadata.ros.{key}] entry is not an array"),
+            Some(_) => bail!("The [package.metadata.ros.{key}] entry is not an array", key=key),
             _ => return Ok(()),
         };
         let install_entries = install_array
@@ -391,14 +391,14 @@ pub fn install_files_from_metadata(
             .map(|entry| match entry {
                 Value::String(dir) => Ok(dir.clone()),
                 _ => {
-                    bail!("The elements of the [package.metadata.ros.{key}] array must be strings")
+                    bail!("The elements of the [package.metadata.ros.{key}] array must be strings", key=key)
                 }
             })
             .collect::<Result<Vec<_>, _>>()?;
         for rel_path in install_entries {
             let src = package_path.as_ref().join(&rel_path);
             copy(&src, &dest).with_context(|| {
-                format!("Could not process [package.metadata.ros.{key}] entry '{rel_path}'",)
+                format!("Could not process [package.metadata.ros.{key}] entry '{rel_path}'", key=key, rel_path=rel_path)
             })?;
         }
     }
