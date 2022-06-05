@@ -270,7 +270,7 @@ pub fn install_binaries(
             for entry in std::fs::read_dir(dir)? {
                 let entry = entry?;
                 let path = entry.path();
-                if path.is_dir() {
+                if path.is_dir() && !path.is_symlink() {
                     find_markers(&path, marker_name, found)?;
                 }
             }
