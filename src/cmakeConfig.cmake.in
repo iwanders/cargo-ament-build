@@ -18,7 +18,7 @@ set(@PACKAGE_NAME@_ALL_LIBRARIES "@PACKAGE_LIBRARY_LIST@")
 get_filename_component(@PACKAGE_NAME@_CMAKE_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
 # So we can obtain the library for that:
 find_library(@PACKAGE_NAME@_LIBRARY @PACKAGE_NAME@
-             HINTS "${@PACKAGE_NAME@_CMAKE_DIR}/../../../lib/@PACKAGE_NAME@/"
+             HINTS "${@PACKAGE_NAME@_CMAKE_DIR}/../../lib/@PACKAGE_NAME@/"
              )
 
 

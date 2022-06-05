@@ -216,12 +216,11 @@ pub fn install_binaries(
     binaries: &[Product],
 ) -> Result<()> {
     let src_dir = build_base.as_ref().join(profile);
-    let dest_dir = install_base.as_ref().join("lib").join(package_name);
-    let lib_dir = install_base.as_ref().join("lib");
-    const SYMLINK_TO_LIB_DIR: bool = true;
+    let bin_dest_dir = install_base.as_ref().join("lib").join(package_name);
+    let lib_dest_dir = install_base.as_ref().join("lib");
 
-    if dest_dir.is_dir() {
-        std::fs::remove_dir_all(&dest_dir)?;
+    if bin_dest_dir.is_dir() {
+        std::fs::remove_dir_all(&bin_dest_dir)?;
     }
 
     // Copy binaries
@@ -231,9 +230,9 @@ pub fn install_binaries(
             .as_ref()
             .ok_or(anyhow!("Binary without name found"))?;
         let src = src_dir.join(name);
-        let dest = dest_dir.join(name);
+        let dest = bin_dest_dir.join(name);
         // Create destination directory
-        DirBuilder::new().recursive(true).create(&dest_dir)?;
+        DirBuilder::new().recursive(true).create(&bin_dest_dir)?;
         std::fs::copy(&src, &dest)
             .context(format!("Failed to copy binary from '{}'", src.display()))?;
     }
@@ -250,21 +249,14 @@ pub fn install_binaries(
     for (prefix, suffix) in prefix_suffix_combinations {
         let filename = String::from(prefix) + package_name + "." + suffix;
         let src = src_dir.join(&filename);
-        let dest = dest_dir.join(&filename);
+        let dest = lib_dest_dir.join(&filename);
         if src.is_file() {
             // We found a library, add this to the list of libraries.
             libraries.push(filename.to_owned());
             // Create destination directory
-            DirBuilder::new().recursive(true).create(&dest_dir)?;
+            DirBuilder::new().recursive(true).create(&lib_dest_dir)?;
             std::fs::copy(&src, &dest)
                 .context(format!("Failed to copy library from '{}'", src.display()))?;
-            if SYMLINK_TO_LIB_DIR {
-                // Remove the old link, don't care if it failed because the file wasn't there.
-                let symlink_location = lib_dir.join(&filename);
-                std::fs::remove_file(&symlink_location).ok();
-                // Make a relative link in the lib directory to the actual package directory.
-                std::os::unix::fs::symlink(&dest.strip_prefix(&lib_dir)?, &symlink_location)?;
-            }
         }
     }
 
