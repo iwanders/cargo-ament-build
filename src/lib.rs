@@ -253,6 +253,67 @@ pub fn install_binaries(
         }
     }
 
+    // Build scripts are not allowed to write outside of OUT_DIR as per
+    // https://doc.rust-lang.org/cargo/reference/build-script-examples.html
+
+    // But we still want to be able to install header files from the source to obtain them we
+    // place a marker file named CARGO_ROS_INCLUDE_ROOT, anything from that directory down
+    // will be installed into the include path.
+    // Need to recursively search; println!("Build root: {:?}", src_dir);
+    // https://doc.rust-lang.org/nightly/std/fs/fn.read_dir.html#examples
+    fn find_markers(dir: &std::path::PathBuf, marker_name: &str, found: &mut Vec<std::path::PathBuf>) -> std::io::Result<()> {
+        if dir.is_dir() {
+            if dir.join(marker_name).is_file()
+            {
+                found.push(dir.to_path_buf());
+            }
+            for entry in std::fs::read_dir(dir)? {
+                let entry = entry?;
+                let path = entry.path();
+                if path.is_dir() {
+                    find_markers(&path, marker_name, found)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    const ROS_INCLUDE_MARKER : &str = "CARGO_ROS_INCLUDE_ROOT";
+    let mut include_roots : Vec<PathBuf> = vec![];
+    find_markers(&src_dir, ROS_INCLUDE_MARKER, &mut include_roots)?;
+    let have_includes = !include_roots.is_empty();
+    println!("Found ros include roots: {:?}", include_roots);
+    // Now that we have found the roots, we can copy all the entries in it to the include dir.
+    if have_includes
+    {
+        // Force all includes into the package_name subdirectory... this breaks with cmake, but it
+        // is better as it avoids conflicts.
+        let include_dir = install_base.as_ref().to_owned().join("include").join(package_name);
+        if include_dir.is_dir() {
+            std::fs::remove_dir_all(&include_dir)?;
+        }
+        DirBuilder::new().recursive(true).create(&include_dir)?;
+
+        // Now iterate over all found roots and copy relevant things.
+        for d in include_roots {
+            for entry in std::fs::read_dir(&d)? {
+                let entry = entry?;
+                if entry.path() == d.join(ROS_INCLUDE_MARKER)
+                {
+                    continue;  // Skip the marker item.
+                }
+                // Recursive copy is not available in std::fs, lets just use cp.
+                Command::new("cp")
+                .arg("-r")
+                .arg(entry.path())
+                .arg(&include_dir)
+                .output()
+                .context(format!("Failed to copy into include dir from '{:?}'", entry.path()))?;
+            }
+            
+        }
+    }
+
     // Now that we know what libraries exist, we can create the cmake config file.
     let package_cmake_dir = install_base.as_ref().to_owned().join("share").join(package_name).join("cmake");
     if package_cmake_dir.is_dir() {
@@ -261,7 +322,8 @@ pub fn install_binaries(
     DirBuilder::new().recursive(true).create(&package_cmake_dir)?;
     let cmake_template = include_str!("cmakeConfig.cmake.in");
     let supported_replaces = [("@PACKAGE_NAME@", package_name),
-                              ("@PACKAGE_LIBRARY_LIST@", &libraries.join(&";"))];
+                              ("@PACKAGE_LIBRARY_LIST@", &libraries.join(&";")),
+                              ("@HAVE_INCLUDE_FILES@", if have_includes {"TRUE"} else {"FALSE"})];
     let mut config_file = cmake_template.to_owned();
     for (pattern, replace) in supported_replaces {
         config_file = config_file.replace(pattern, replace);

@@ -10,6 +10,7 @@ set(@PACKAGE_NAME@_VERSION_MINOR 0)
 set(@PACKAGE_NAME@_VERSION 0.0)
 set(@PACKAGE_NAME@_VERSION_STRING "0.0")
 
+
 # List of all libraries that were installed, includes static ones.
 set(@PACKAGE_NAME@_ALL_LIBRARIES "@PACKAGE_LIBRARY_LIST@")
 
@@ -30,5 +31,8 @@ else()
   message(WARNING "Did not find any library for @PACKAGE_NAME@")
 endif()
 
+set(@PACKAGE_NAME@_HAS_INCLUDED @HAVE_INCLUDE_FILES@)
+if (@PACKAGE_NAME@_HAS_INCLUDED)
+  target_include_directories(@PACKAGE_NAME@ INTERFACE "${@PACKAGE_NAME@_CMAKE_DIR}/../../../include/@PACKAGE_NAME@/")
+endif()
 
-#target_include_directories(@PACKAGE_NAME@ INTERFACE include/)
